@@ -82,6 +82,19 @@ def parse_roles(roles_dirs, builder=GraphBuilder()):
 
                     builder.add_role(depended_role)
                     builder.link_roles(dependent_role, depended_role)
+        for path in glob(join(roles_dir, '*/tasks/main.yml')):
+            dependent_role = path.split('/')[-3]
+
+            builder.add_role(dependent_role)
+
+            with open(path, 'r') as f:
+                for e in yaml.load(f.read()):
+                  incl_role = e.get('include_role')
+                  if incl_role:
+                    depended_role = incl_role['name']
+
+                    builder.add_role(depended_role)
+                    builder.link_roles(dependent_role, depended_role)
 
     return builder.graph
 
