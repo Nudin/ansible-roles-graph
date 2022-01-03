@@ -92,7 +92,7 @@ def parse_roles(roles_dirs, builder=GraphBuilder()):
             builder.add_role(including_role)
 
             with open(path, 'r') as f:
-                for e in yaml.load(f.read()):
+                for e in yaml.safe_load(f.read()):
                     incl_role = e.get('include_role')
                     if incl_role:
                         included_role = incl_role['name']
