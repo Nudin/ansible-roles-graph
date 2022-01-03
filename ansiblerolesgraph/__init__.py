@@ -77,7 +77,8 @@ def parse_roles(roles_dirs, builder=GraphBuilder()):
             builder.add_role(dependent_role)
 
             with open(path, 'r') as f:
-                for dependency in yaml.safe_load(f.read()).get('dependencies', []):
+                data = yaml.safe_load(f.read()) or {}
+                for dependency in data.get('dependencies', []):
                     if isinstance(dependency, dict):
                         depended_role = dependency['role']
                     else:
@@ -92,7 +93,8 @@ def parse_roles(roles_dirs, builder=GraphBuilder()):
             builder.add_role(including_role)
 
             with open(path, 'r') as f:
-                for e in yaml.safe_load(f.read()):
+                data = yaml.safe_load(f.read()) or []
+                for e in data:
                     incl_role = e.get('include_role')
                     if incl_role:
                         included_role = incl_role['name']
