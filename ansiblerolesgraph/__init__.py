@@ -10,8 +10,8 @@ from pathlib import Path
 import gv
 import yaml
 
-__version__ = "0.1.0"
-__author__ = "Sebastien Nicouleaud"
+__version__ = "0.2.0"
+__author__ = "Sebastien Nicouleaud, Michael Schönitzer"
 
 
 def parse_args(args):
