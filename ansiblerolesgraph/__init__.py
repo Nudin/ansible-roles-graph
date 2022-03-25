@@ -53,7 +53,7 @@ def parse_args(args):
         "-o", "--output", type=str, default="ansible-roles.png", help="the output file"
     )
 
-    p.add_argument("-f", "--format", type=str, default="png")
+    p.add_argument("-f", "--format", type=str, default=None, help="file format")
 
     p.add_argument(
         "-x",
@@ -63,7 +63,11 @@ def parse_args(args):
         help="Colon separated list of roles that should not be displayed",
     )
 
-    return p.parse_args(args)
+    # If no format was specified use the file extension
+    parsed = p.parse_args(args)
+    if parsed.format is None:
+        parsed.format = Path(parsed.output).suffix[1:]
+    return parsed
 
 
 def extract_str(obj, name):
