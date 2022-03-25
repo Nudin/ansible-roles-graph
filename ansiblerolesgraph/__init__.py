@@ -55,6 +55,14 @@ def parse_args(args):
 
     p.add_argument("-f", "--format", type=str, default="png")
 
+    p.add_argument(
+        "-x",
+        "--exclude",
+        type=str,
+        default="",
+        help="Colon separated list of roles that should not be displayed",
+    )
+
     return p.parse_args(args)
 
 
@@ -66,10 +74,11 @@ def extract_str(obj, name):
 
 
 class GraphBuilder:
-    def __init__(self):
+    def __init__(self, filter=lambda: []):
         self.graph = gv.digraph("roles")
         self._role_nodes = {}
         self._links = {}
+        self._filter = filter
 
     def __create_node__(self, label):
         if label not in self._role_nodes:
@@ -77,13 +86,17 @@ class GraphBuilder:
         return self._role_nodes[label]
 
     def add_role(self, role):
-        self.__create_node__(role)
+        if role not in self._filter:
+            self.__create_node__(role)
 
     def add_playbook(self, role):
-        node = self.__create_node__(role)
-        gv.setv(node, "shape", "parallelogram")
+        if role not in self._filter:
+            node = self.__create_node__(role)
+            gv.setv(node, "shape", "parallelogram")
 
     def link_roles(self, dependent_role, depended_role):
+        if depended_role in self._filter or depended_role in self._filter:
+            return
         if (dependent_role, depended_role) not in self._links:
             gv.edge(self._role_nodes[dependent_role], self._role_nodes[depended_role])
             self._links[(dependent_role, depended_role)] = True
@@ -164,7 +177,8 @@ def render_graph(graph, config):
 
 def main():
     config = parse_args(sys.argv[1:])
-    graph = parse_files_or_dirs(config.roles_dirs)
+    builder = GraphBuilder(config.exclude.split(","))
+    graph = parse_files_or_dirs(config.roles_dirs, builder)
     render_graph(graph, config)
 
 
