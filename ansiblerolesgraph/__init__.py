@@ -1,9 +1,11 @@
 #!/usr/bin/env python
 
+import os
 import sys
 from argparse import ArgumentParser
 from glob import glob
 from os.path import join
+from pathlib import Path
 
 import gv
 import yaml
@@ -40,11 +42,11 @@ def parse_args(args):
 
     p.add_argument(
         "roles_dirs",
-        metavar="ROLES_DIR",
+        metavar="ROLES_DIR|PLAYBOOK",
         type=str,
         nargs="*",
         default=["roles"],
-        help="a directory containing ansible roles",
+        help="a directory containing ansible roles or a playbook",
     )
 
     p.add_argument(
@@ -56,53 +58,103 @@ def parse_args(args):
     return p.parse_args(args)
 
 
+def extract_str(obj, name):
+    if isinstance(obj, str):
+        return obj
+    else:
+        return obj[name]
+
+
 class GraphBuilder:
     def __init__(self):
         self.graph = gv.digraph("roles")
         self._role_nodes = {}
+        self._links = {}
+
+    def __create_node__(self, label):
+        if label not in self._role_nodes:
+            self._role_nodes[label] = gv.node(self.graph, label)
+        return self._role_nodes[label]
 
     def add_role(self, role):
-        if role not in self._role_nodes:
-            self._role_nodes[role] = gv.node(self.graph, role)
+        self.__create_node__(role)
+
+    def add_playbook(self, role):
+        node = self.__create_node__(role)
+        gv.setv(node, "shape", "parallelogram")
 
     def link_roles(self, dependent_role, depended_role):
-        gv.edge(self._role_nodes[dependent_role], self._role_nodes[depended_role])
+        if (dependent_role, depended_role) not in self._links:
+            gv.edge(self._role_nodes[dependent_role], self._role_nodes[depended_role])
+            self._links[(dependent_role, depended_role)] = True
 
 
-def parse_roles(roles_dirs, builder=GraphBuilder()):
-    for roles_dir in roles_dirs:
-        for path in glob(join(roles_dir, "*/meta/main.yml")):
-            dependent_role = path.split("/")[-3]
-
-            builder.add_role(dependent_role)
-
-            with open(path, "r") as f:
-                data = yaml.safe_load(f.read()) or {}
-                for dependency in data.get("dependencies", []):
-                    if isinstance(dependency, dict):
-                        depended_role = dependency["role"]
-                    else:
-                        depended_role = dependency
-
-                    builder.add_role(depended_role)
-                    builder.link_roles(dependent_role, depended_role)
-
-        for path in glob(join(roles_dir, "*/tasks/main.yml")):
-            including_role = path.split("/")[-3]
-
-            builder.add_role(including_role)
-
-            with open(path, "r") as f:
-                data = yaml.safe_load(f.read()) or []
-                for e in data:
-                    incl_role = e.get("include_role")
-                    if incl_role:
-                        included_role = incl_role["name"]
-
-                        builder.add_role(included_role)
-                        builder.link_roles(including_role, included_role)
-
+def parse_files_or_dirs(targets, builder=GraphBuilder()):
+    for path in targets:
+        path = Path(path)
+        if os.path.isdir(path):
+            parse_role_dir(path, builder)
+        elif os.path.isfile(path):
+            parse_playbook(path, builder)
+        else:
+            raise ValueError("Can't read file", path)
     return builder.graph
+
+
+def parse_role_dir(roles_dir, builder):
+    for path in glob(join(roles_dir, "*")):
+        parse_role(path, builder)
+
+
+def parse_playbook(path, builder):
+    playbook_name = path.name
+    playbook_dir = path.parent
+    builder.add_playbook(playbook_name)
+    with open(path, "r") as f:
+        playbook_data = yaml.safe_load(f.read()) or {}
+
+    # Search for included playbooks and used roles
+    roles = set()
+    for group in playbook_data:
+        for role in group.get("roles", []):
+            roles.add(extract_str(role, "role"))
+        included_play = group.get("import_playbook")
+        if included_play:
+            incl_play_path = playbook_dir / included_play
+            parse_playbook(incl_play_path, builder)
+            builder.link_roles(playbook_name, included_play)
+    for role in roles:
+        parse_role(playbook_dir / "roles" / role, builder)
+        builder.link_roles(playbook_name, role)
+
+
+def parse_role(role_path, builder=GraphBuilder()):
+    path_meta = role_path / "meta" / "main.yml"
+    role_name = role_path.name
+
+    builder.add_role(role_name)
+
+    # Find dependencies
+    if os.path.exists(path_meta):
+        with open(path_meta, "r") as f:
+            data = yaml.safe_load(f.read()) or {}
+            for dependency in data.get("dependencies", []):
+                depended_role = extract_str(dependency, "role")
+                builder.add_role(depended_role)
+                builder.link_roles(role_name, depended_role)
+
+    # Find included roles
+    path_tasks = role_path / "tasks" / "main.yml"
+    if os.path.exists(path_tasks):
+        with open(path_tasks, "r") as f:
+            data = yaml.safe_load(f.read()) or []
+            for e in data:
+                incl_role = e.get("include_role")
+                if incl_role:
+                    included_role = incl_role["name"]
+
+                    builder.add_role(included_role)
+                    builder.link_roles(role_name, included_role)
 
 
 def render_graph(graph, config):
@@ -112,7 +164,7 @@ def render_graph(graph, config):
 
 def main():
     config = parse_args(sys.argv[1:])
-    graph = parse_roles(config.roles_dirs)
+    graph = parse_files_or_dirs(config.roles_dirs)
     render_graph(graph, config)
 
 
